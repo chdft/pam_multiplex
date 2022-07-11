@@ -1,2 +1,2 @@
 #! /bin/bash
-gcc tester.c -lpam -lpam_misc -std=c99
+gcc tester.c -o tester -lpam -lpam_misc -std=c99
