@@ -157,12 +157,12 @@ void copy_pam_items(pam_handle_t *sourcePamh, pam_handle_t *destinationPamh){
 
 void* stack_host_main(void* arg){
 	stack_host_args* typedArg = (stack_host_args*)arg;
-	printf("multiplex \"%s\": starting background thread\n", typedArg->stackName);
-	//msleep(2000L);
+	debug_print("multiplex \"%s\": starting background thread\n", typedArg->stackName);
+	//debug_msleep(2000L);
 	//*(typedArg->lateRetVal) = PAM_SUCCESS;
 	//return NULL;
 	
-	
+	// https://github.com/beatgammit/simple-pam provides a pretty minimal example of a PAM module/application and was used as inspiration
 	
 	pam_handle_t* pamh = NULL;
 	int retval;
@@ -178,32 +178,32 @@ void* stack_host_main(void* arg){
 
 	// Are the credentials correct?
 	if (retval != PAM_SUCCESS) {
-		printf("multiplex \"%s\": starting stack failed\n", typedArg->stackName);
+		debug_print("multiplex \"%s\": starting stack failed\n", typedArg->stackName);
 		return NULL;
 	}
 
-	printf("multiplex \"%s\": session opened\n", typedArg->stackName);
+	debug_print("multiplex \"%s\": session opened\n", typedArg->stackName);
 	copy_pam_items(typedArg->parentPamh, pamh);
-	printf("multiplex \"%s\": items copied\n", typedArg->stackName);
+	debug_print("multiplex \"%s\": items copied\n", typedArg->stackName);
 	
-	retval = pam_authenticate(pamh, 0);
+	retval = pam_authenticate(pamh, typedArg->parentFlags);
 
 	/*// Can the accound be used at this time?
 	if (retval == PAM_SUCCESS) {
-		printf("Account is valid.\n");
+		debug_print("Account is valid.\n");
 		retval = pam_acct_mgmt(pamh, 0);
 	}*/
 
 	// Did everything work?
 	*(typedArg->lateRetVal) = retval;
-	printf("multiplex \"%s\": Auth=%i=%s\n", typedArg->stackName, retval, pam_code_to_str(retval));
+	debug_print("multiplex \"%s\": Auth=%i=%s\n", typedArg->stackName, retval, pam_code_to_str(retval));
 
 	// close PAM (end session)
 	if (pam_end(pamh, retval) != PAM_SUCCESS) {
 		pamh = NULL;
-		printf("multiplex \"%s\": failed to release PAM application side handle; retval=%i\n", typedArg->stackName, retval);
+		debug_print("multiplex \"%s\": failed to release PAM application side handle; retval=%i\n", typedArg->stackName, retval);
 	}
-	printf("multiplex \"%s\": ending background thread\n", typedArg->stackName);
+	debug_print("multiplex \"%s\": ending background thread\n", typedArg->stackName);
 	return NULL;
 }
 
@@ -216,22 +216,22 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 		//insufficient parameters
 		return PAM_AUTH_ERR;
 	}
-	printf("1\n");
-	msleep(1000L);
-	printf("2\n");
+	debug_print("%i\n", 1);
+	debug_msleep(1000L); //use exponential sleep to enable side-channel based debugging
+	debug_print("%i\n", 2);
 	long iterationDurationMs = 100L;
 	int timeoutDurationS = atoi(argv[0]);
 	int timeoutIterations = timeoutDurationS * 1000L / iterationDurationMs;
 	int subStackCount = argc-1;
-	msleep(2000L);
+	debug_msleep(2000L);
 	stack_host_args params[subStackCount];
 	pthread_t thread_infos[subStackCount];
 	int results[subStackCount];
-	printf("3\n");
-	msleep(4000L);
+	debug_print("%i\n", 3);
+	debug_msleep(4000L);
 	//start substacks
 	for(int subStackIndex = 0; subStackIndex < subStackCount; subStackIndex++){
-		printf("4;%i\n", subStackIndex);
+		debug_print("4;%i\n", subStackIndex);
 		results[subStackIndex] = MULTIPLEX_NOT_READY;
 		/*params[subStackIndex] = (stack_host_args) {
 			.stackName = argv[subStackIndex],
@@ -245,20 +245,20 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 			flags,
 			pamh
 		};*/
-		params[subStackIndex].stackName = (*(char**)&(argv[subStackIndex+1])) ;//"multiplex_debug_deny";
+		params[subStackIndex].stackName = (*(char**)&(argv[subStackIndex+1])) ;
 		params[subStackIndex].lateRetVal = &results[subStackIndex];
 		params[subStackIndex].parentFlags = flags;
 		params[subStackIndex].parentPamh = pamh;
 		pthread_create(&thread_infos[subStackIndex], NULL, stack_host_main, &params[subStackIndex]);
 	}
-	msleep(8000L);
+	debug_msleep(8000L);
 	//for the proof of concept we use polling (easier to do correctly)
-	//TODO reimplement the polling with proper locking
+	//TODO reimplement using proper locking instead of polling
 	for(int iteration = 0; iteration <= timeoutIterations; iteration++){
-		printf("5::%i::%i\n", iteration, timeoutIterations);
+		debug_print("5::%i::%i\n", iteration, timeoutIterations);
 		for(int subStackIndex = 0; subStackIndex < subStackCount; subStackIndex++){
 			if(results[subStackIndex] != MULTIPLEX_NOT_READY){
-				printf("value available from substack %i\n", subStackIndex);
+				debug_print("value available from substack %i\n", subStackIndex);
 				return results[subStackIndex];
 			}
 		}
@@ -300,10 +300,11 @@ pam_sm_chauthtok (pam_handle_t *pamh, int flags, int argc, const char **argv)
     return PAM_IGNORE;
 }
 
+//main method for standalone mode (only used for testing)
 int main(int argc, const char** argv){
-	printf("test\n");
+	debug_print("main-start\n", 0);
 	int result = pam_sm_authenticate(NULL, 0, argc-1, argv+1);
-	printf("result: %i=%s\n", result, pam_code_to_str(result));
-	printf("test2\n");
+	debug_print("result: %i=%s\n", result, pam_code_to_str(result));
+	debug_print("main-end\n", 0);
 	return 0;
 }
