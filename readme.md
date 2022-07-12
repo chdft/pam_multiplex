@@ -26,3 +26,11 @@ You would generally use your own username (or a dedicated test account) for user
 - required timeout for the module: While I have not come across any problems *yet*, many (old) forum threads and not so old GitHub issues state that PAM is conceptually incompatible with multi-threading. This module makes use of multi-threading. To avoid unanticipated deadlocks during authentication, there is a required (but user chosen) timeout, after which `PAM_AUTH_ERR` is returned.
 - only `auth` is supported: multiplexing does not really make sense for the other methods (`account` and `session` should use all modules sequentially since no user interaction is anticipated, `password` would provide an odd UX when only 1 of N passwords is actually changed)
 - The `conv` function is passed to all substacks despite only a single being supposed to actually use it: All PAM stacks need *some* `conv` function. Providing S0s `conv` was easiest for now, but better solutions are welcome.
+
+## Building
+To build with DEBUG-output (including side-channel debug delays), include the `DEBUG` parameter when invoking `build.sh`.
+```
+./build.sh #compile and link
+sudo ./install.sh #install module file into system-wide directory (does not modify stacks)
+./tester/build.sh #build tester tool
+```
