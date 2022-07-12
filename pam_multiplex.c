@@ -132,6 +132,7 @@ void* stack_host_main(void* arg){
 	const char* user = NULL;
 
 	//copy conversation function
+	//TODO proxy conv and drop messages after the main thread reported success on another thread to avoid cluttering the console (and maybe even a use after free depending on conv implementation(?))
 	const struct pam_conv *conv = &pam_default_conv;
 	const void* item;
 	pam_get_item(typedArg->parentPamh, PAM_CONV, &item);
@@ -175,13 +176,13 @@ int
 pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
 	//args: timeoutInSeconds module1 [module2 […]]
+	debug_print("pam_multiplex pam_sm_authenticate start\n", 0);
 	if(argc < 2){
 		//insufficient parameters
 		return PAM_AUTH_ERR;
 	}
-	debug_print("%i\n", 1);
 	debug_msleep(1000L); //use exponential sleep to enable side-channel based debugging
-	debug_print("%i\n", 2);
+	debug_print("pam_multiplex pam_sm_authenticate state init\n", 0);
 	long iterationDurationMs = 100L;
 	int timeoutDurationS = atoi(argv[0]);
 	int timeoutIterations = timeoutDurationS * 1000L / iterationDurationMs;
@@ -190,7 +191,7 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 	stack_host_args params[subStackCount];
 	pthread_t thread_infos[subStackCount];
 	int results[subStackCount];
-	debug_print("%i\n", 3);
+	debug_print("pam_multiplex pam_sm_authenticate start background threads\n", 0);
 	debug_msleep(4000L);
 	//start substacks
 	for(int subStackIndex = 0; subStackIndex < subStackCount; subStackIndex++){
@@ -229,7 +230,7 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 		//sleep for 100ms=0.1s
 		msleep(iterationDurationMs);
 	}
-	//should be unreachable
+	//only reached after timeout triggered
 	return PAM_AUTH_ERR;
 }
 
