@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <pthread.h>
 #include <time.h>
+#include <stdbool.h>
 
 #ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX 255
@@ -44,6 +45,8 @@ typedef struct{
 	int *lateRetVal;
 	int parentFlags;
 	pam_handle_t *parentPamh;
+	bool* cancelationToken;
+	bool allowPrompts; 
 } stack_host_args;
 
 const struct pam_conv pam_default_conv = {
@@ -118,9 +121,44 @@ void copy_pam_items(pam_handle_t *sourcePamh, pam_handle_t *destinationPamh){
 	}
 }
 
+/*struct pam_conv {
+    int (*conv)(int num_msg, const struct pam_message **msg,
+                struct pam_response **resp, void *appdata_ptr);
+    void *appdata_ptr;
+};*/
+typedef struct{
+	const struct pam_conv *conv;
+	bool* cancelationToken;
+	bool allowPrompts;
+} conv_proxy_data;
+int proxy_conv(int num_msg, const struct pam_message **msg, struct pam_response **resp, void *appdata_ptr){
+	debug_print("proxy_conv\n", 0);
+	conv_proxy_data* proxy_data = appdata_ptr;
+	if(*(proxy_data->cancelationToken)){
+		debug_print("proxy_conv not canceled\n", 0);
+		if(!proxy_data->allowPrompts){
+			debug_print("proxy_conv prompts not allowed\n", 0);
+			for(int i = 0; i < num_msg; i++){
+				//this uses linux style "array of pointers"-msg (there is also the "pointer to array"-msg)
+				//  see also https://web.archive.org/web/20190513193446/http://www.linux-pam.org/Linux-PAM-html/adg-interface-of-app-expected.html#adg-pam_conv
+				if(msg[i]->msg_style == PAM_PROMPT_ECHO_OFF || msg[i]->msg_style == PAM_PROMPT_ECHO_ON){
+					debug_print("proxy_conv non-forward due to prompt filter in msg %i\n", i);
+					return PAM_CONV_ERR;
+				}
+			}
+		}
+		
+		debug_print("proxy_conv forwarding…\n", 0);
+		return proxy_data->conv->conv(num_msg, msg, resp, proxy_data->conv->appdata_ptr);
+	}else{
+		debug_print("proxy_conv canceled\n", 0);
+		return PAM_CONV_ERR;
+	}
+}
+
 void* stack_host_main(void* arg){
 	stack_host_args* typedArg = (stack_host_args*)arg;
-	debug_print("multiplex \"%s\": starting background thread\n", typedArg->stackName);
+	debug_print("multiplex \"%s\": starting background thread with config %p for %p\n", typedArg->stackName, typedArg, typedArg->parentPamh);
 	//debug_msleep(2000L);
 	//*(typedArg->lateRetVal) = PAM_SUCCESS;
 	//return NULL;
@@ -131,14 +169,24 @@ void* stack_host_main(void* arg){
 	int retval;
 	const char* user = NULL;
 
-	//copy conversation function
-	//TODO proxy conv and drop messages after the main thread reported success on another thread to avoid cluttering the console (and maybe even a use after free depending on conv implementation(?))
-	const struct pam_conv *conv = &pam_default_conv;
-	const void* item;
-	pam_get_item(typedArg->parentPamh, PAM_CONV, &item);
-	conv = item;
+	//wrap conversation function
+	//  proxy conv and drop messages after the main thread reported success on another thread to avoid cluttering the console
+	const struct pam_conv *parentConv;// = &pam_default_conv;
+	const void* parentConvV;
+	pam_get_item(typedArg->parentPamh, PAM_CONV, &parentConvV);
+	parentConv = parentConvV;
+	
+	conv_proxy_data proxy_data = {
+		.conv=parentConv,
+		.cancelationToken=typedArg->cancelationToken,
+		.allowPrompts=typedArg->allowPrompts
+	};
+	const struct pam_conv conv = {
+		.conv=proxy_conv,
+		.appdata_ptr=&proxy_data
+	};
 
-	retval = pam_start(typedArg->stackName, user, conv, &pamh);
+	retval = pam_start(typedArg->stackName, user, &conv, &pamh);
 
 	// Are the credentials correct?
 	if (retval != PAM_SUCCESS) {
@@ -176,7 +224,7 @@ int
 pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
 	//args: timeoutInSeconds module1 [module2 […]]
-	debug_print("pam_multiplex pam_sm_authenticate start\n", 0);
+	debug_print("pam_multiplex pam_sm_authenticate start for pamh=%p\n", pamh);
 	if(argc < 2){
 		//insufficient parameters
 		return PAM_AUTH_ERR;
@@ -184,18 +232,18 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 	debug_msleep(1000L); //use exponential sleep to enable side-channel based debugging
 	debug_print("pam_multiplex pam_sm_authenticate state init\n", 0);
 	long iterationDurationMs = 100L;
-	int timeoutDurationS = atoi(argv[0]);
+	int timeoutDurationS = atoi(argv[0]); //note that argv[0] is *not* the module name
 	int timeoutIterations = timeoutDurationS * 1000L / iterationDurationMs;
 	int subStackCount = argc-1;
-	debug_msleep(2000L);
 	stack_host_args params[subStackCount];
 	pthread_t thread_infos[subStackCount];
 	int results[subStackCount];
+	bool cancelationToken = false;
 	debug_print("pam_multiplex pam_sm_authenticate start background threads\n", 0);
-	debug_msleep(4000L);
+	debug_msleep(2000L);
 	//start substacks
 	for(int subStackIndex = 0; subStackIndex < subStackCount; subStackIndex++){
-		debug_print("4;%i\n", subStackIndex);
+		debug_print("pam_multiplex preparing substack %i=\"%s\" for %p\n", subStackIndex, argv[subStackIndex+1], pamh);
 		results[subStackIndex] = MULTIPLEX_NOT_READY;
 		/*params[subStackIndex] = (stack_host_args) {
 			.stackName = argv[subStackIndex],
@@ -209,13 +257,25 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 			flags,
 			pamh
 		};*/
-		params[subStackIndex].stackName = (*(char**)&(argv[subStackIndex+1])) ;
+		//+1 the argv index to ignore timeout
+		//+1 the string to skip first character
+		params[subStackIndex].stackName = (*(char**)&(argv[subStackIndex+1]))+1;
 		params[subStackIndex].lateRetVal = &results[subStackIndex];
 		params[subStackIndex].parentFlags = flags;
 		params[subStackIndex].parentPamh = pamh;
+		params[subStackIndex].cancelationToken = &cancelationToken;
+		//TODO consider only allowing prompts on substack 0
+		switch(argv[subStackIndex+1][0]){
+			case '+': params[subStackIndex].allowPrompts = true; break;
+			case '-': params[subStackIndex].allowPrompts = false; break;
+			default: 
+				debug_print("pam_multiplex pam_sm_authenticate multiplex \"%s\" does not have a supported prefix \n", params[subStackIndex].stackName);
+				return PAM_AUTH_ERR;
+		}
+		
 		pthread_create(&thread_infos[subStackIndex], NULL, stack_host_main, &params[subStackIndex]);
 	}
-	debug_msleep(8000L);
+	debug_msleep(4000L);
 	//for the proof of concept we use polling (easier to do correctly)
 	//TODO reimplement using proper locking instead of polling
 	for(int iteration = 0; iteration <= timeoutIterations; iteration++){
@@ -223,6 +283,7 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 		for(int subStackIndex = 0; subStackIndex < subStackCount; subStackIndex++){
 			if(results[subStackIndex] != MULTIPLEX_NOT_READY){
 				debug_print("value available from substack %i\n", subStackIndex);
+				cancelationToken = true; //cancel other stacks
 				return results[subStackIndex];
 			}
 		}
@@ -231,6 +292,7 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 		msleep(iterationDurationMs);
 	}
 	//only reached after timeout triggered
+	cancelationToken = true; //cancel all stacks
 	return PAM_AUTH_ERR;
 }
 
