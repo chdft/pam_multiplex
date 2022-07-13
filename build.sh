@@ -1,6 +1,10 @@
 #! /bin/bash
 if [[ "$1" = "DEBUG" ]]; then
-	FLAGS="-DDEBUG"
+	#HACK: use O3 even for debug builds since gcc produces much better diagnostics with O3 than with O0…
+	#TODO: consider changing to CLANG
+	FLAGS="-DDEBUG -O3"
+else
+	FLAGS="-O3"
 fi
 CVERSION="gnu11"
 # test app

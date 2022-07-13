@@ -40,6 +40,8 @@
 	#define debug_msleep(time) do { } while (0)
 #endif
 
+#define array_size(array) ((sizeof(array))/(sizeof(array[0])))
+
 typedef struct{
 	char *stackName;
 	int *lateRetVal;
@@ -111,7 +113,7 @@ void copy_pam_items(pam_handle_t *sourcePamh, pam_handle_t *destinationPamh){
 		PAM_XAUTHDATA,
 		PAM_AUTHTOK_TYPE
 	};
-	for(int i = 0; i < sizeof(itemTypes); i++){
+	for(int i = 0; i < array_size(itemTypes); i++){
 		int itemType = itemTypes[i];
 		const void* item;
 		int retval = pam_get_item(sourcePamh, itemType, &item);
@@ -135,6 +137,9 @@ int proxy_conv(int num_msg, const struct pam_message **msg, struct pam_response 
 	debug_print("proxy_conv\n", 0);
 	conv_proxy_data* proxy_data = appdata_ptr;
 	if(*(proxy_data->cancelationToken)){
+		debug_print("proxy_conv canceled\n", 0);
+		return PAM_CONV_ERR;
+	}else{
 		debug_print("proxy_conv not canceled\n", 0);
 		if(!proxy_data->allowPrompts){
 			debug_print("proxy_conv prompts not allowed\n", 0);
@@ -150,9 +155,6 @@ int proxy_conv(int num_msg, const struct pam_message **msg, struct pam_response 
 		
 		debug_print("proxy_conv forwarding…\n", 0);
 		return proxy_data->conv->conv(num_msg, msg, resp, proxy_data->conv->appdata_ptr);
-	}else{
-		debug_print("proxy_conv canceled\n", 0);
-		return PAM_CONV_ERR;
 	}
 }
 
