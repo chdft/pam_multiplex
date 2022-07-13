@@ -3,8 +3,13 @@
 #include <stdio.h>
 
 
+int proxy_conv(int num_msg, const struct pam_message **msg, struct pam_response **resp, void *appdata_ptr){
+	printf("proxy_conv tester\n");
+	return misc_conv(num_msg, msg, resp, NULL);
+}
+
 const struct pam_conv conv = {
-	misc_conv,
+	proxy_conv,
 	NULL
 };
 

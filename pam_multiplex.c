@@ -173,7 +173,7 @@ void* stack_host_main(void* arg){
 
 	//wrap conversation function
 	//  proxy conv and drop messages after the main thread reported success on another thread to avoid cluttering the console
-	const struct pam_conv *parentConv;// = &pam_default_conv;
+	const struct pam_conv *parentConv = &pam_default_conv;
 	const void* parentConvV;
 	pam_get_item(typedArg->parentPamh, PAM_CONV, &parentConvV);
 	parentConv = parentConvV;
@@ -189,6 +189,24 @@ void* stack_host_main(void* arg){
 	};
 
 	retval = pam_start(typedArg->stackName, user, &conv, &pamh);
+	const void* retrievedConv;
+	pam_get_item(pamh, PAM_CONV, &retrievedConv);
+	debug_print("multiplex \"%s\": conv retrieved=%p, set=%p, parent=%p, default=%p\n", typedArg->stackName, retrievedConv, &conv, parentConv, &pam_default_conv);
+	pam_set_item(pamh, PAM_CONV, &conv); //somehow the custom conv is ignored without setting it twice
+	pam_get_item(pamh, PAM_CONV, &retrievedConv);
+	debug_print("multiplex \"%s\": conv retrieved=%p, set=%p, parent=%p, default=%p\n", typedArg->stackName, retrievedConv, &conv, parentConv, &pam_default_conv);
+	pam_set_item(pamh, PAM_CONV, &conv); //somehow the custom conv is ignored without setting it twice
+	pam_get_item(pamh, PAM_CONV, &retrievedConv);
+	debug_print("multiplex \"%s\": conv retrieved=%p, set=%p, parent=%p, default=%p\n", typedArg->stackName, retrievedConv, &conv, parentConv, &pam_default_conv);
+	pam_set_item(pamh, PAM_CONV, &conv); //somehow the custom conv is ignored without setting it twice
+	pam_get_item(pamh, PAM_CONV, &retrievedConv);
+	debug_print("multiplex \"%s\": conv retrieved=%p, set=%p, parent=%p, default=%p\n", typedArg->stackName, retrievedConv, &conv, parentConv, &pam_default_conv);
+	pam_set_item(pamh, PAM_CONV, &conv); //somehow the custom conv is ignored without setting it twice
+	pam_get_item(pamh, PAM_CONV, &retrievedConv);
+	debug_print("multiplex \"%s\": conv retrieved=%p, set=%p, parent=%p, default=%p\n", typedArg->stackName, retrievedConv, &conv, parentConv, &pam_default_conv);
+	pam_set_item(pamh, PAM_CONV, &conv); //somehow the custom conv is ignored without setting it twice
+	pam_get_item(pamh, PAM_CONV, &retrievedConv);
+	debug_print("multiplex \"%s\": conv retrieved=%p, set=%p, parent=%p, default=%p\n", typedArg->stackName, retrievedConv, &conv, parentConv, &pam_default_conv);
 
 	// Are the credentials correct?
 	if (retval != PAM_SUCCESS) {
