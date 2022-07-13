@@ -229,7 +229,7 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 	debug_print("pam_multiplex pam_sm_authenticate start for pamh=%p\n", pamh);
 	if(argc < 2){
 		//insufficient parameters
-		return PAM_AUTH_ERR;
+		return PAM_AUTHINFO_UNAVAIL;
 	}
 	debug_msleep(1000L); //use exponential sleep to enable side-channel based debugging
 	debug_print("pam_multiplex pam_sm_authenticate state init\n", 0);
@@ -272,7 +272,7 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 			case '-': params[subStackIndex].allowPrompts = false; break;
 			default: 
 				debug_print("pam_multiplex pam_sm_authenticate multiplex \"%s\" does not have a supported prefix \n", params[subStackIndex].stackName);
-				return PAM_AUTH_ERR;
+				return PAM_AUTHINFO_UNAVAIL;
 		}
 		
 		pthread_create(&thread_infos[subStackIndex], NULL, stack_host_main, &params[subStackIndex]);
@@ -295,7 +295,7 @@ pam_sm_authenticate (pam_handle_t *pamh, int flags, int argc, const char **argv)
 	}
 	//only reached after timeout triggered
 	cancelationToken = true; //cancel all stacks
-	return PAM_AUTH_ERR;
+	return PAM_AUTHINFO_UNAVAIL;
 }
 
 int

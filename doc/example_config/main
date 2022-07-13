@@ -1,0 +1,12 @@
+#%PAM-1.0
+
+auth       required                                          pam_faillock.so      preauth
+-auth      [success=3 default=ignore]                        pam_systemd_home.so
+# On timeout or config caused fail (=authinfo_unavail), we go to pam_unix to enable graceful failover to a password
+# On incorrect password (=auth_err), we log the fail directly
+-auth      [success=2  authinfo_unavail=ignore default=1]  pam_multiplex.so     30 +multiplex_password -multiplex_fingerprint
+auth       [success=1 default=bad]                           pam_unix.so          try_first_pass nullok
+auth       [default=die]                                     pam_faillock.so      authfail
+auth       optional                                          pam_permit.so
+auth       required                                          pam_env.so
+auth       required                                          pam_faillock.so      authsucc

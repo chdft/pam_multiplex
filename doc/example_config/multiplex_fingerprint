@@ -1,0 +1,6 @@
+#%PAM-1.0
+# Note the semantics of the timeout:
+#  - fprintd will provide a FAIL when the timeout is reached, preempting any result from other substacks
+#  - a larger timeout will keep the background thread busy for longer than needed
+#   => choose the same or barely longer timeout than in the multiplex config
+auth       required     pam_fprintd.so     timeout=31

@@ -2,6 +2,8 @@
 
 PAM Multiplexer is a PAM module that internally calls N (N>=1) other stacks in the background and returns the result of the first sub-stack that provides one. This provides a way to run multiple modules in parallel.
 
+***This is an in-development project. Consider it unstable (in API, and operation) and do not use it for critical systems yet.***
+
 ## Usage
 In your primary PAM stack (S0) - for example `/etc/pamd.d/login` - add a line for the multiplexer module. This line will probably look like this:
 ```
@@ -27,14 +29,15 @@ You would generally use your own username (or a dedicated test account) for user
 
 ## Design Decisions and TODO
 
-- the availability of a result in the substacks is polled at 10Hz; this was done for ease of development to get to a working MVP more quickly
-- required timeout for the module: While I have not come across any problems *yet*, many (old) forum threads and not so old GitHub issues state that PAM is conceptually incompatible with multi-threading. This module makes use of multi-threading. To avoid unanticipated deadlocks during authentication, there is a required (but user chosen) timeout, after which `PAM_AUTH_ERR` is returned.
-- only `auth` is supported: multiplexing does not really make sense for the other methods (`account` and `session` should use all modules sequentially since no user interaction is anticipated, `password` would provide an odd UX when only 1 of N passwords is actually changed)
+- the availability of a result in the substacks is polled at 10Hz; this was done for ease of development to get to a working MVP more quickly and to avoid more complex problems with multi-threading+locking (see next point). Ideas and pull requests on handling this better are welcome.
+- required timeout for the module: While I have not come across any problems *yet*, many (old) forum threads and not so old GitHub issues state that PAM is conceptually incompatible with multi-threading. This module makes use of multi-threading. To avoid unanticipated deadlocks during authentication, there is a required (but user chosen) timeout, after which `PAM_AUTHINFO_UNAVAIL` is returned. The intention is that the admin configures the S0 stack to fail-over to classic sequential auth (usually with `pam_unix.so`).
+- only `auth` is supported: multiplexing does not really make sense for the other methods (`account` and `session` should use all modules sequentially since no user interaction is anticipated, `password` would provide an odd UX when only 1 of N passwords is actually changed). If you have a use case for methods other than `auth`, feel free to open an issue describing it and how you would want this module to behave.
 - The `conv` function is passed to all substacks despite only a single being supposed to actually use it: All PAM stacks need *some* `conv` function. Providing S0s `conv` was easiest for now, but better solutions are welcome.
 - sub-stacks instead of sub-modules: 
 	- PAM only provides a documented API to start an entire stack, but not a single module => this way is more stable
 	- each parallel sub-module needs to run on a separate PAM handle, since thread safety of the module-facing APIs is not documented, but likely not provided
 	- sub-modules still need separate arg-lists; This would result in a complex syntax for invoking the multiplex module.
+- unusual module parameter syntax: the current way (positional args with fixed size prefixes) was easiest to implement. Ideas and pull requests on handling this better are welcome.
 
 ## Building
 To build with DEBUG-output (including side-channel debug delays), include the `DEBUG` parameter when invoking `build.sh`.
